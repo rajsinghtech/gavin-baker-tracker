@@ -94,83 +94,37 @@ class TwitterPoster:
         """Format portfolio changes into a thread of tweets."""
         tweets = []
 
-        # Header tweet
         value_b = changes.current_total_value / 1_000_000_000
         change_pct = changes.total_value_change_pct
         change_sign = "+" if change_pct >= 0 else ""
-
-        # Get top tickers for header
-        top_buys = changes.get_top_buys(3)
-        top_sells = changes.get_top_sells(3)
-
-        buy_tickers = ", ".join([self._get_ticker(p.issuer) for p in top_buys])
-        sell_tickers = ", ".join([self._get_ticker(p.issuer) for p in top_sells])
-
         date_formatted = self._format_date(changes.current_date)
-        header = (
-            f"Gavin Baker's Atreides 13F Update\n\n"
-            f"As of {date_formatted}\n"
-            f"${value_b:.2f}B ({change_sign}{change_pct:.1f}%)\n\n"
-            f"Bought: {buy_tickers}\n"
-            f"Sold: {sell_tickers}"
-        )
-        tweets.append(header)
 
-        # Top holdings tweet
+        # Tweet 1: Header with top holdings
         top_holdings = changes.get_top_positions(5)
-        if top_holdings:
-            holdings_tweet = "Top 5 Holdings:\n\n"
-            for pos in top_holdings:
-                delta = f"+{pos.weight_change:.1f}%" if pos.weight_change > 0 else f"{pos.weight_change:.1f}%"
-                holdings_tweet += f"{pos.current_weight:.1f}% {pos.issuer[:18]} ({delta})\n"
-            tweets.append(holdings_tweet.strip())
+        header = f"Gavin Baker 13F ({date_formatted})\n\n"
+        header += f"AUM: ${value_b:.2f}B ({change_sign}{change_pct:.1f}%)\n\n"
+        header += "Top Holdings:\n"
+        for pos in top_holdings:
+            header += f"{pos.current_weight:.1f}% {pos.issuer[:20]}\n"
+        tweets.append(header.strip())
 
-        # Purchases tweet
-        top_buys = changes.get_top_buys(5)
+        # Tweet 2: Buys
+        top_buys = changes.get_top_buys(6)
         if top_buys:
-            buys_tweet = "Biggest Purchases:\n\n"
+            buys = "Bought:\n\n"
             for pos in top_buys:
-                if pos.change_type == "new":
-                    buys_tweet += f"+{pos.current_weight:.1f}% {pos.issuer[:20]} NEW\n"
-                else:
-                    buys_tweet += f"+{pos.weight_change:.1f}% {pos.issuer[:20]}\n"
-            tweets.append(buys_tweet.strip())
+                tag = " (new)" if pos.change_type == "new" else ""
+                buys += f"+{pos.weight_change:.1f}% {pos.issuer[:22]}{tag}\n"
+            tweets.append(buys.strip())
 
-        # Sales tweet
-        top_sells = changes.get_top_sells(5)
+        # Tweet 3: Sells
+        top_sells = changes.get_top_sells(6)
         if top_sells:
-            sells_tweet = "Biggest Sales:\n\n"
+            sells = "Sold:\n\n"
             for pos in top_sells:
-                if pos.change_type == "closed":
-                    sells_tweet += f"-{pos.previous_weight:.1f}% {pos.issuer[:20]} EXIT\n"
-                else:
-                    sells_tweet += f"{pos.weight_change:.1f}% {pos.issuer[:20]}\n"
-            tweets.append(sells_tweet.strip())
-
-        # New positions tweet (if any beyond top buys)
-        new_not_in_top = [p for p in changes.new_positions if p not in top_buys][:5]
-        if new_not_in_top:
-            new_tweet = "Other New Positions:\n\n"
-            for pos in new_not_in_top:
-                new_tweet += f"{pos.current_weight:.1f}% {pos.issuer[:22]}\n"
-            tweets.append(new_tweet.strip())
-
-        # Exits tweet (if any beyond top sells)
-        exits_not_in_top = [p for p in changes.closed_positions if p not in top_sells][:5]
-        if exits_not_in_top:
-            exits_tweet = "Other Exits:\n\n"
-            for pos in exits_not_in_top:
-                exits_tweet += f"(was {pos.previous_weight:.1f}%) {pos.issuer[:20]}\n"
-            tweets.append(exits_tweet.strip())
-
-        # Footer tweet
-        footer = (
-            f"Data: SEC 13F ({date_formatted})\n\n"
-            f"13F shows positions as of quarter-end. "
-            f"Current holdings may differ.\n\n"
-            f"Source: SEC EDGAR"
-        )
-        tweets.append(footer)
+                tag = " (exit)" if pos.change_type == "closed" else ""
+                sells += f"{pos.weight_change:.1f}% {pos.issuer[:22]}{tag}\n"
+            tweets.append(sells.strip())
 
         return tweets
 
@@ -216,44 +170,27 @@ class TwitterPoster:
         return f"${first_word.upper()}"
 
     def format_single_tweet(self, changes: PortfolioChanges) -> str:
-        """
-        Format portfolio changes into a single tweet (for simpler updates).
-
-        Args:
-            changes: Portfolio changes
-
-        Returns:
-            Formatted tweet string
-        """
+        """Format portfolio changes into a single tweet."""
         value_b = changes.current_total_value / 1_000_000_000
         change_pct = changes.total_value_change_pct
         change_sign = "+" if change_pct >= 0 else ""
         date_formatted = self._format_date(changes.current_date)
 
-        tweet = (
-            f"Atreides 13F - {date_formatted}\n\n"
-            f"AUM: ${value_b:.2f}B ({change_sign}{change_pct:.1f}%)\n\n"
-        )
+        tweet = f"Gavin Baker 13F ({date_formatted})\n\n"
+        tweet += f"AUM: ${value_b:.2f}B ({change_sign}{change_pct:.1f}%)\n\n"
 
-        # Add top move up and down
         top_buy = changes.get_top_buys(1)
         top_sell = changes.get_top_sells(1)
 
         if top_buy:
             pos = top_buy[0]
-            if pos.change_type == "new":
-                tweet += f"Top buy: {pos.issuer[:15]} +{pos.current_weight:.1f}% (NEW)\n"
-            else:
-                tweet += f"Top buy: {pos.issuer[:15]} +{pos.weight_change:.1f}%\n"
+            tag = " (new)" if pos.change_type == "new" else ""
+            tweet += f"Top buy: {pos.issuer[:18]}  +{pos.weight_change:.1f}%{tag}\n"
 
         if top_sell:
             pos = top_sell[0]
-            if pos.change_type == "closed":
-                tweet += f"Top sale: {pos.issuer[:15]} -{pos.previous_weight:.1f}% (EXIT)\n"
-            else:
-                tweet += f"Top sale: {pos.issuer[:15]} {pos.weight_change:.1f}%\n"
-
-        tweet += f"\n{changes.num_changes} changes | SEC EDGAR"
+            tag = " (exit)" if pos.change_type == "closed" else ""
+            tweet += f"Top sell: {pos.issuer[:18]} {pos.weight_change:.1f}%{tag}"
 
         return tweet
 
