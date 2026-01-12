@@ -98,15 +98,18 @@ class TwitterPoster:
         change_pct = changes.total_value_change_pct
         change_sign = "+" if change_pct >= 0 else ""
 
-        num_buys = len(changes.new_positions) + len(changes.increased_positions)
-        num_sells = len(changes.closed_positions) + len(changes.decreased_positions)
+        # Get top tickers for header
+        top_buys = changes.get_top_buys(3)
+        top_sells = changes.get_top_sells(3)
+
+        buy_tickers = ", ".join([self._get_ticker(p.issuer) for p in top_buys])
+        sell_tickers = ", ".join([self._get_ticker(p.issuer) for p in top_sells])
 
         header = (
             f"Gavin Baker's Atreides 13F Update\n\n"
-            f"Q{self._get_quarter(changes.current_date)} {self._get_year(changes.current_date)} Portfolio\n"
-            f"AUM: ${value_b:.2f}B ({change_sign}{change_pct:.1f}% QoQ)\n\n"
-            f"{num_buys} purchases, {num_sells} sales\n"
-            f"Thread below"
+            f"Q{self._get_quarter(changes.current_date)} {self._get_year(changes.current_date)} | ${value_b:.2f}B ({change_sign}{change_pct:.1f}%)\n\n"
+            f"Bought: {buy_tickers}\n"
+            f"Sold: {sell_tickers}"
         )
         tweets.append(header)
 
@@ -186,6 +189,12 @@ class TwitterPoster:
             return date_str.split("-")[0]
         except IndexError:
             return ""
+
+    def _get_ticker(self, issuer: str) -> str:
+        """Format issuer as $TICKER style."""
+        # Take first word, clean it up
+        first_word = issuer.split()[0] if issuer else "?"
+        return f"${first_word.upper()}"
 
     def format_single_tweet(self, changes: PortfolioChanges) -> str:
         """
