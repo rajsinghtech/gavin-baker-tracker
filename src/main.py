@@ -14,6 +14,7 @@ from datetime import datetime
 from src.fetcher import EdgarClient
 from src.analyzer import PortfolioAnalyzer
 from src.poster.twitter import TwitterPoster, DryRunPoster
+from src.state import StateManager
 
 
 def main():
@@ -36,6 +37,11 @@ def main():
         help="Print portfolio summary without posting",
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force posting even if already posted this filing",
+    )
+    parser.add_argument(
         "--user-agent",
         default=os.environ.get("SEC_USER_AGENT", "GavinBakerTracker contact@example.com"),
         help="User agent for SEC EDGAR requests (required by SEC)",
@@ -46,6 +52,11 @@ def main():
         default=0.05,
         help="Significance threshold for position changes (default: 0.05 = 5%%)",
     )
+    parser.add_argument(
+        "--state-file",
+        default=None,
+        help="Path to state file for tracking posted filings",
+    )
 
     args = parser.parse_args()
 
@@ -55,6 +66,7 @@ def main():
     # Initialize clients
     edgar = EdgarClient(user_agent=args.user_agent)
     analyzer = PortfolioAnalyzer(significance_threshold=args.threshold)
+    state = StateManager(state_file=args.state_file)
 
     # Fetch filings
     print("\n📥 Fetching 13F filings from SEC EDGAR...")
@@ -62,9 +74,21 @@ def main():
         current, previous = edgar.get_last_two_filings()
         print(f"   Current filing: {current.filed_date} ({current.num_positions} positions)")
         print(f"   Previous filing: {previous.filed_date} ({previous.num_positions} positions)")
+        print(f"   Accession: {current.accession_number}")
     except Exception as e:
         print(f"❌ Error fetching filings: {e}")
         sys.exit(1)
+
+    # Check if already posted
+    if not args.dry_run and not args.summary_only and not args.force:
+        if state.is_already_posted(current.accession_number):
+            last = state.get_last_posted()
+            print(f"\n⏭️  Already posted this filing!")
+            print(f"   Accession: {current.accession_number}")
+            print(f"   Posted at: {last.posted_at}")
+            print(f"   Tweet: https://x.com/i/status/{last.tweet_ids[0]}")
+            print("\n   Use --force to post again.")
+            sys.exit(0)
 
     # Analyze changes
     print("\n🔍 Analyzing portfolio changes...")
@@ -103,11 +127,23 @@ def main():
             else:
                 tweet_id = poster.post_tweet(tweet_text)
                 print(f"✅ Posted tweet: https://x.com/i/status/{tweet_id}")
+                # Save state
+                state.save_posted(
+                    accession_number=current.accession_number,
+                    report_date=changes.current_date,
+                    tweet_ids=[tweet_id],
+                )
         else:
             tweet_ids = poster.post_portfolio_update(changes)
             if not args.dry_run:
                 print(f"✅ Posted thread with {len(tweet_ids)} tweets")
                 print(f"   First tweet: https://x.com/i/status/{tweet_ids[0]}")
+                # Save state
+                state.save_posted(
+                    accession_number=current.accession_number,
+                    report_date=changes.current_date,
+                    tweet_ids=tweet_ids,
+                )
     except Exception as e:
         print(f"❌ Error posting to X.com: {e}")
         sys.exit(1)

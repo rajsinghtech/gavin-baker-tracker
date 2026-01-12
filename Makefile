@@ -1,4 +1,4 @@
-.PHONY: install run dry-run summary post post-single clean help
+.PHONY: install run dry-run summary post post-single post-force clean help
 
 # Default target
 help:
@@ -9,8 +9,9 @@ help:
 	@echo "  make run          - Run with dry-run (preview tweets)"
 	@echo "  make dry-run      - Same as 'make run'"
 	@echo "  make summary      - Show portfolio summary only"
-	@echo "  make post         - Post thread to X.com"
+	@echo "  make post         - Post thread to X.com (skips if already posted)"
 	@echo "  make post-single  - Post single tweet to X.com"
+	@echo "  make post-force   - Force post even if already posted"
 	@echo "  make clean        - Remove venv and cache files"
 
 # Install dependencies
@@ -30,13 +31,17 @@ dry-run:
 summary:
 	. venv/bin/activate && set -a && source .env && set +a && python -m src.main --summary-only
 
-# Post thread to X.com
+# Post thread to X.com (skips duplicates)
 post:
 	. venv/bin/activate && set -a && source .env && set +a && python -m src.main
 
 # Post single tweet to X.com
 post-single:
 	. venv/bin/activate && set -a && source .env && set +a && python -m src.main --single-tweet
+
+# Force post even if already posted
+post-force:
+	. venv/bin/activate && set -a && source .env && set +a && python -m src.main --force
 
 # Clean up
 clean:

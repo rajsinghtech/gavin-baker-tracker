@@ -3,6 +3,7 @@ X.com (Twitter) posting module using Tweepy.
 """
 
 import os
+from datetime import datetime
 import tweepy
 from typing import Optional
 from src.analyzer.compare import PortfolioChanges, PositionChange
@@ -105,9 +106,11 @@ class TwitterPoster:
         buy_tickers = ", ".join([self._get_ticker(p.issuer) for p in top_buys])
         sell_tickers = ", ".join([self._get_ticker(p.issuer) for p in top_sells])
 
+        date_formatted = self._format_date(changes.current_date)
         header = (
             f"Gavin Baker's Atreides 13F Update\n\n"
-            f"Q{self._get_quarter(changes.current_date)} {self._get_year(changes.current_date)} | ${value_b:.2f}B ({change_sign}{change_pct:.1f}%)\n\n"
+            f"As of {date_formatted}\n"
+            f"${value_b:.2f}B ({change_sign}{change_pct:.1f}%)\n\n"
             f"Bought: {buy_tickers}\n"
             f"Sold: {sell_tickers}"
         )
@@ -162,7 +165,7 @@ class TwitterPoster:
 
         # Footer tweet
         footer = (
-            f"Data: SEC 13F filing ({changes.current_date})\n\n"
+            f"Data: SEC 13F ({date_formatted})\n\n"
             f"13F shows positions as of quarter-end. "
             f"Current holdings may differ.\n\n"
             f"Source: SEC EDGAR"
@@ -190,6 +193,22 @@ class TwitterPoster:
         except IndexError:
             return ""
 
+    def _format_date(self, date_str: str) -> str:
+        """Format date string (YYYY-MM-DD) to readable format like 'Sep 30th, 2025'."""
+        if not date_str:
+            return ""
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+            day = dt.day
+            # Add ordinal suffix
+            if 11 <= day <= 13:
+                suffix = "th"
+            else:
+                suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+            return dt.strftime(f"%b {day}{suffix}, %Y")
+        except ValueError:
+            return date_str
+
     def _get_ticker(self, issuer: str) -> str:
         """Format issuer as $TICKER style."""
         # Take first word, clean it up
@@ -209,11 +228,10 @@ class TwitterPoster:
         value_b = changes.current_total_value / 1_000_000_000
         change_pct = changes.total_value_change_pct
         change_sign = "+" if change_pct >= 0 else ""
-        q = self._get_quarter(changes.current_date)
-        year = self._get_year(changes.current_date)
+        date_formatted = self._format_date(changes.current_date)
 
         tweet = (
-            f"Atreides 13F Q{q} {year}\n\n"
+            f"Atreides 13F - {date_formatted}\n\n"
             f"AUM: ${value_b:.2f}B ({change_sign}{change_pct:.1f}%)\n\n"
         )
 

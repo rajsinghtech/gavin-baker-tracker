@@ -52,3 +52,6 @@ htmlcov/
 # Data cache
 data/
 cache/
+
+# State file (tracks posted filings)
+.gavin-baker-state.json
