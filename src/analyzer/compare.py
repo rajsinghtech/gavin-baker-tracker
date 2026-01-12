@@ -1,0 +1,268 @@
+"""
+Portfolio comparison and change detection.
+"""
+
+from dataclasses import dataclass, field
+from typing import Optional
+from src.fetcher.edgar import Filing, Holding
+
+
+@dataclass
+class PositionChange:
+    """Represents a change in a single position."""
+    issuer: str
+    cusip: str
+    title: str
+    current_shares: int
+    previous_shares: int
+    current_value: int  # in USD
+    previous_value: int  # in USD
+    change_type: str  # 'new', 'closed', 'increased', 'decreased', 'unchanged'
+
+    @property
+    def share_change(self) -> int:
+        """Absolute change in shares."""
+        return self.current_shares - self.previous_shares
+
+    @property
+    def share_change_pct(self) -> float:
+        """Percentage change in shares."""
+        if self.previous_shares == 0:
+            return 100.0 if self.current_shares > 0 else 0.0
+        return (self.share_change / self.previous_shares) * 100
+
+    @property
+    def value_change(self) -> int:
+        """Absolute change in value (USD)."""
+        return self.current_value - self.previous_value
+
+    @property
+    def value_change_pct(self) -> float:
+        """Percentage change in value."""
+        if self.previous_value == 0:
+            return 100.0 if self.current_value > 0 else 0.0
+        return (self.value_change / self.previous_value) * 100
+
+
+@dataclass
+class PortfolioChanges:
+    """Summary of all portfolio changes between two filings."""
+    current_date: str
+    previous_date: str
+    current_total_value: int
+    previous_total_value: int
+    new_positions: list[PositionChange] = field(default_factory=list)
+    closed_positions: list[PositionChange] = field(default_factory=list)
+    increased_positions: list[PositionChange] = field(default_factory=list)
+    decreased_positions: list[PositionChange] = field(default_factory=list)
+    unchanged_positions: list[PositionChange] = field(default_factory=list)
+
+    @property
+    def total_value_change(self) -> int:
+        """Total portfolio value change in USD."""
+        return self.current_total_value - self.previous_total_value
+
+    @property
+    def total_value_change_pct(self) -> float:
+        """Total portfolio value change percentage."""
+        if self.previous_total_value == 0:
+            return 0.0
+        return (self.total_value_change / self.previous_total_value) * 100
+
+    @property
+    def has_changes(self) -> bool:
+        """Whether there are any portfolio changes."""
+        return bool(
+            self.new_positions
+            or self.closed_positions
+            or self.increased_positions
+            or self.decreased_positions
+        )
+
+    @property
+    def num_changes(self) -> int:
+        """Total number of position changes."""
+        return (
+            len(self.new_positions)
+            + len(self.closed_positions)
+            + len(self.increased_positions)
+            + len(self.decreased_positions)
+        )
+
+    def get_top_buys(self, n: int = 5) -> list[PositionChange]:
+        """Get top N new or increased positions by value change."""
+        all_buys = self.new_positions + self.increased_positions
+        return sorted(all_buys, key=lambda x: x.value_change, reverse=True)[:n]
+
+    def get_top_sells(self, n: int = 5) -> list[PositionChange]:
+        """Get top N closed or decreased positions by value change."""
+        all_sells = self.closed_positions + self.decreased_positions
+        return sorted(all_sells, key=lambda x: abs(x.value_change), reverse=True)[:n]
+
+
+class PortfolioAnalyzer:
+    """Analyzes changes between 13F filings."""
+
+    def __init__(self, significance_threshold: float = 0.05):
+        """
+        Initialize the analyzer.
+
+        Args:
+            significance_threshold: Minimum percentage change to consider significant (default 5%)
+        """
+        self.significance_threshold = significance_threshold
+
+    def compare(self, current: Filing, previous: Filing) -> PortfolioChanges:
+        """
+        Compare two filings and identify changes.
+
+        Args:
+            current: The more recent filing
+            previous: The older filing
+
+        Returns:
+            PortfolioChanges object with all detected changes
+        """
+        changes = PortfolioChanges(
+            current_date=current.report_date or current.filed_date,
+            previous_date=previous.report_date or previous.filed_date,
+            current_total_value=current.total_value,
+            previous_total_value=previous.total_value,
+        )
+
+        # Build lookup dictionaries by CUSIP
+        current_by_cusip = {h.cusip: h for h in current.holdings}
+        previous_by_cusip = {h.cusip: h for h in previous.holdings}
+
+        all_cusips = set(current_by_cusip.keys()) | set(previous_by_cusip.keys())
+
+        for cusip in all_cusips:
+            curr_holding = current_by_cusip.get(cusip)
+            prev_holding = previous_by_cusip.get(cusip)
+
+            change = self._analyze_position(curr_holding, prev_holding)
+
+            if change.change_type == "new":
+                changes.new_positions.append(change)
+            elif change.change_type == "closed":
+                changes.closed_positions.append(change)
+            elif change.change_type == "increased":
+                changes.increased_positions.append(change)
+            elif change.change_type == "decreased":
+                changes.decreased_positions.append(change)
+            else:
+                changes.unchanged_positions.append(change)
+
+        # Sort by absolute value change
+        changes.new_positions.sort(key=lambda x: x.current_value, reverse=True)
+        changes.closed_positions.sort(key=lambda x: x.previous_value, reverse=True)
+        changes.increased_positions.sort(key=lambda x: x.value_change, reverse=True)
+        changes.decreased_positions.sort(key=lambda x: abs(x.value_change), reverse=True)
+
+        return changes
+
+    def _analyze_position(
+        self,
+        current: Optional[Holding],
+        previous: Optional[Holding]
+    ) -> PositionChange:
+        """Analyze change for a single position."""
+
+        if current is None and previous is None:
+            raise ValueError("Both holdings cannot be None")
+
+        if current is None:
+            # Position was closed
+            return PositionChange(
+                issuer=previous.issuer,
+                cusip=previous.cusip,
+                title=previous.title,
+                current_shares=0,
+                previous_shares=previous.shares,
+                current_value=0,
+                previous_value=previous.value_usd,
+                change_type="closed",
+            )
+
+        if previous is None:
+            # New position
+            return PositionChange(
+                issuer=current.issuer,
+                cusip=current.cusip,
+                title=current.title,
+                current_shares=current.shares,
+                previous_shares=0,
+                current_value=current.value_usd,
+                previous_value=0,
+                change_type="new",
+            )
+
+        # Position exists in both - check for changes
+        share_change_pct = 0.0
+        if previous.shares > 0:
+            share_change_pct = (current.shares - previous.shares) / previous.shares
+
+        if share_change_pct > self.significance_threshold:
+            change_type = "increased"
+        elif share_change_pct < -self.significance_threshold:
+            change_type = "decreased"
+        else:
+            change_type = "unchanged"
+
+        return PositionChange(
+            issuer=current.issuer,
+            cusip=current.cusip,
+            title=current.title,
+            current_shares=current.shares,
+            previous_shares=previous.shares,
+            current_value=current.value_usd,
+            previous_value=previous.value_usd,
+            change_type=change_type,
+        )
+
+    def generate_summary(self, changes: PortfolioChanges) -> str:
+        """Generate a human-readable summary of portfolio changes."""
+        lines = []
+
+        lines.append(f"Portfolio Changes: {changes.previous_date} → {changes.current_date}")
+        lines.append("=" * 50)
+
+        # Overall stats
+        lines.append(f"\nTotal Value: ${changes.current_total_value:,.0f}")
+        change_sign = "+" if changes.total_value_change >= 0 else ""
+        lines.append(
+            f"Change: {change_sign}${changes.total_value_change:,.0f} "
+            f"({change_sign}{changes.total_value_change_pct:.1f}%)"
+        )
+
+        lines.append(f"\nTotal Position Changes: {changes.num_changes}")
+        lines.append(f"  - New Positions: {len(changes.new_positions)}")
+        lines.append(f"  - Closed Positions: {len(changes.closed_positions)}")
+        lines.append(f"  - Increased: {len(changes.increased_positions)}")
+        lines.append(f"  - Decreased: {len(changes.decreased_positions)}")
+
+        # Top buys
+        if changes.new_positions or changes.increased_positions:
+            lines.append("\n📈 TOP BUYS:")
+            for pos in changes.get_top_buys(5):
+                if pos.change_type == "new":
+                    lines.append(f"  NEW: {pos.issuer} - ${pos.current_value:,.0f}")
+                else:
+                    lines.append(
+                        f"  +{pos.share_change_pct:.0f}%: {pos.issuer} - "
+                        f"+${pos.value_change:,.0f}"
+                    )
+
+        # Top sells
+        if changes.closed_positions or changes.decreased_positions:
+            lines.append("\n📉 TOP SELLS:")
+            for pos in changes.get_top_sells(5):
+                if pos.change_type == "closed":
+                    lines.append(f"  SOLD: {pos.issuer} - ${pos.previous_value:,.0f}")
+                else:
+                    lines.append(
+                        f"  {pos.share_change_pct:.0f}%: {pos.issuer} - "
+                        f"${pos.value_change:,.0f}"
+                    )
+
+        return "\n".join(lines)
