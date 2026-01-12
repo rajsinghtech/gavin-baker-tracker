@@ -99,59 +99,67 @@ class TwitterPoster:
         change_sign = "+" if change_pct >= 0 else ""
 
         header = (
-            f"🚨 Gavin Baker's Atreides Management 13F Update\n\n"
-            f"📊 Q{self._get_quarter(changes.current_date)} Portfolio: ${value_b:.2f}B\n"
-            f"📈 Change: {change_sign}{change_pct:.1f}%\n\n"
-            f"🔄 {changes.num_changes} position changes\n"
-            f"Thread 🧵👇"
+            f"Gavin Baker's Atreides 13F Update\n\n"
+            f"Q{self._get_quarter(changes.current_date)} {self._get_year(changes.current_date)} Portfolio\n"
+            f"AUM: ${value_b:.2f}B ({change_sign}{change_pct:.1f}% QoQ)\n\n"
+            f"{changes.num_changes} position changes\n"
+            f"Thread below"
         )
         tweets.append(header)
 
-        # New positions tweet
-        if changes.new_positions:
-            new_tweet = "🆕 NEW POSITIONS:\n\n"
-            for pos in changes.new_positions[:5]:
-                value_m = pos.current_value / 1_000_000
-                new_tweet += f"• ${pos.issuer[:20]} - ${value_m:.1f}M\n"
-            if len(changes.new_positions) > 5:
-                new_tweet += f"\n+{len(changes.new_positions) - 5} more..."
+        # Top holdings tweet
+        top_holdings = changes.get_top_positions(5)
+        if top_holdings:
+            holdings_tweet = "Top 5 Holdings:\n\n"
+            for pos in top_holdings:
+                delta = f"+{pos.weight_change:.1f}" if pos.weight_change > 0 else f"{pos.weight_change:.1f}"
+                holdings_tweet += f"{pos.current_weight:.1f}% {pos.issuer[:18]} ({delta}pp)\n"
+            tweets.append(holdings_tweet.strip())
+
+        # Weight increases tweet
+        top_buys = changes.get_top_buys(5)
+        if top_buys:
+            buys_tweet = "Biggest Weight Increases:\n\n"
+            for pos in top_buys:
+                if pos.change_type == "new":
+                    buys_tweet += f"+{pos.current_weight:.1f}pp {pos.issuer[:20]} NEW\n"
+                else:
+                    buys_tweet += f"+{pos.weight_change:.1f}pp {pos.issuer[:20]}\n"
+            tweets.append(buys_tweet.strip())
+
+        # Weight decreases tweet
+        top_sells = changes.get_top_sells(5)
+        if top_sells:
+            sells_tweet = "Biggest Weight Decreases:\n\n"
+            for pos in top_sells:
+                if pos.change_type == "closed":
+                    sells_tweet += f"-{pos.previous_weight:.1f}pp {pos.issuer[:20]} EXIT\n"
+                else:
+                    sells_tweet += f"{pos.weight_change:.1f}pp {pos.issuer[:20]}\n"
+            tweets.append(sells_tweet.strip())
+
+        # New positions tweet (if any beyond top buys)
+        new_not_in_top = [p for p in changes.new_positions if p not in top_buys][:5]
+        if new_not_in_top:
+            new_tweet = "Other New Positions:\n\n"
+            for pos in new_not_in_top:
+                new_tweet += f"{pos.current_weight:.1f}% {pos.issuer[:22]}\n"
             tweets.append(new_tweet.strip())
 
-        # Increased positions tweet
-        if changes.increased_positions:
-            inc_tweet = "📈 ADDED TO:\n\n"
-            for pos in changes.increased_positions[:5]:
-                inc_tweet += f"• ${pos.issuer[:20]} +{pos.share_change_pct:.0f}%\n"
-            if len(changes.increased_positions) > 5:
-                inc_tweet += f"\n+{len(changes.increased_positions) - 5} more..."
-            tweets.append(inc_tweet.strip())
-
-        # Decreased positions tweet
-        if changes.decreased_positions:
-            dec_tweet = "📉 TRIMMED:\n\n"
-            for pos in changes.decreased_positions[:5]:
-                dec_tweet += f"• ${pos.issuer[:20]} {pos.share_change_pct:.0f}%\n"
-            if len(changes.decreased_positions) > 5:
-                dec_tweet += f"\n+{len(changes.decreased_positions) - 5} more..."
-            tweets.append(dec_tweet.strip())
-
-        # Closed positions tweet
-        if changes.closed_positions:
-            closed_tweet = "🚪 EXITED:\n\n"
-            for pos in changes.closed_positions[:5]:
-                value_m = pos.previous_value / 1_000_000
-                closed_tweet += f"• ${pos.issuer[:20]} (was ${value_m:.1f}M)\n"
-            if len(changes.closed_positions) > 5:
-                closed_tweet += f"\n+{len(changes.closed_positions) - 5} more..."
-            tweets.append(closed_tweet.strip())
+        # Exits tweet (if any beyond top sells)
+        exits_not_in_top = [p for p in changes.closed_positions if p not in top_sells][:5]
+        if exits_not_in_top:
+            exits_tweet = "Other Exits:\n\n"
+            for pos in exits_not_in_top:
+                exits_tweet += f"(was {pos.previous_weight:.1f}%) {pos.issuer[:20]}\n"
+            tweets.append(exits_tweet.strip())
 
         # Footer tweet
         footer = (
-            f"📅 Data from SEC 13F filing ({changes.current_date})\n\n"
-            f"⚠️ 13F shows positions as of quarter-end. "
+            f"Data: SEC 13F filing ({changes.current_date})\n\n"
+            f"13F shows positions as of quarter-end. "
             f"Current holdings may differ.\n\n"
-            f"🔗 Source: SEC EDGAR\n"
-            f"#investing #hedgefunds #13F"
+            f"Source: SEC EDGAR"
         )
         tweets.append(footer)
 
@@ -167,6 +175,15 @@ class TwitterPoster:
         except (IndexError, ValueError):
             return "?"
 
+    def _get_year(self, date_str: str) -> str:
+        """Extract year from date string (YYYY-MM-DD)."""
+        if not date_str:
+            return ""
+        try:
+            return date_str.split("-")[0]
+        except IndexError:
+            return ""
+
     def format_single_tweet(self, changes: PortfolioChanges) -> str:
         """
         Format portfolio changes into a single tweet (for simpler updates).
@@ -180,31 +197,33 @@ class TwitterPoster:
         value_b = changes.current_total_value / 1_000_000_000
         change_pct = changes.total_value_change_pct
         change_sign = "+" if change_pct >= 0 else ""
+        q = self._get_quarter(changes.current_date)
+        year = self._get_year(changes.current_date)
 
         tweet = (
-            f"🚨 Atreides 13F Update (Q{self._get_quarter(changes.current_date)})\n\n"
-            f"💰 ${value_b:.2f}B ({change_sign}{change_pct:.1f}%)\n"
+            f"Atreides 13F Q{q} {year}\n\n"
+            f"AUM: ${value_b:.2f}B ({change_sign}{change_pct:.1f}%)\n\n"
         )
 
-        # Add top moves
+        # Add top move up and down
         top_buy = changes.get_top_buys(1)
         top_sell = changes.get_top_sells(1)
 
         if top_buy:
             pos = top_buy[0]
             if pos.change_type == "new":
-                tweet += f"📈 New: ${pos.issuer[:15]}\n"
+                tweet += f"Top add: {pos.issuer[:15]} +{pos.current_weight:.1f}pp (NEW)\n"
             else:
-                tweet += f"📈 Added: ${pos.issuer[:15]} +{pos.share_change_pct:.0f}%\n"
+                tweet += f"Top add: {pos.issuer[:15]} +{pos.weight_change:.1f}pp\n"
 
         if top_sell:
             pos = top_sell[0]
             if pos.change_type == "closed":
-                tweet += f"📉 Exit: ${pos.issuer[:15]}\n"
+                tweet += f"Top trim: {pos.issuer[:15]} -{pos.previous_weight:.1f}pp (EXIT)\n"
             else:
-                tweet += f"📉 Trim: ${pos.issuer[:15]} {pos.share_change_pct:.0f}%\n"
+                tweet += f"Top trim: {pos.issuer[:15]} {pos.weight_change:.1f}pp\n"
 
-        tweet += f"\n🔄 {changes.num_changes} total changes"
+        tweet += f"\n{changes.num_changes} changes | SEC EDGAR"
 
         return tweet
 
@@ -217,7 +236,7 @@ class DryRunPoster:
 
     def post_tweet(self, text: str, reply_to: Optional[str] = None) -> str:
         print(f"\n{'='*50}")
-        print(f"[DRY RUN] Would post tweet:")
+        print(f"[DRY RUN] Would post tweet ({len(text)} chars):")
         print(f"{'='*50}")
         print(text)
         print(f"{'='*50}")
@@ -235,7 +254,7 @@ class DryRunPoster:
 
         tweet_ids = []
         for i, tweet in enumerate(tweets, 1):
-            print(f"\n--- Tweet {i}/{len(tweets)} ---")
+            print(f"\n--- Tweet {i}/{len(tweets)} ({len(tweet)} chars) ---")
             print(tweet)
             tweet_ids.append(f"dry_run_{i}")
 

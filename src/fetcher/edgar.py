@@ -17,7 +17,7 @@ class Holding:
     issuer: str
     title: str
     cusip: str
-    value: int  # in thousands USD
+    value: int  # value in thousands USD (as reported in 13F)
     shares: int
     share_type: str  # SH or PRN
     put_call: Optional[str]  # Put, Call, or None
@@ -28,8 +28,10 @@ class Holding:
 
     @property
     def value_usd(self) -> int:
-        """Value in actual USD (not thousands)."""
-        return self.value * 1000
+        """Value in actual USD."""
+        # SEC 13F reports value in thousands, so multiply by 1000
+        # But actual SEC XMLs appear to be in actual dollars already
+        return self.value
 
 
 @dataclass
