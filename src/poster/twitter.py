@@ -98,11 +98,14 @@ class TwitterPoster:
         change_pct = changes.total_value_change_pct
         change_sign = "+" if change_pct >= 0 else ""
 
+        num_buys = len(changes.new_positions) + len(changes.increased_positions)
+        num_sells = len(changes.closed_positions) + len(changes.decreased_positions)
+
         header = (
             f"Gavin Baker's Atreides 13F Update\n\n"
             f"Q{self._get_quarter(changes.current_date)} {self._get_year(changes.current_date)} Portfolio\n"
             f"AUM: ${value_b:.2f}B ({change_sign}{change_pct:.1f}% QoQ)\n\n"
-            f"{changes.num_changes} position changes\n"
+            f"{num_buys} purchases, {num_sells} sales\n"
             f"Thread below"
         )
         tweets.append(header)
@@ -112,30 +115,30 @@ class TwitterPoster:
         if top_holdings:
             holdings_tweet = "Top 5 Holdings:\n\n"
             for pos in top_holdings:
-                delta = f"+{pos.weight_change:.1f}" if pos.weight_change > 0 else f"{pos.weight_change:.1f}"
-                holdings_tweet += f"{pos.current_weight:.1f}% {pos.issuer[:18]} ({delta}pp)\n"
+                delta = f"+{pos.weight_change:.1f}%" if pos.weight_change > 0 else f"{pos.weight_change:.1f}%"
+                holdings_tweet += f"{pos.current_weight:.1f}% {pos.issuer[:18]} ({delta})\n"
             tweets.append(holdings_tweet.strip())
 
-        # Weight increases tweet
+        # Purchases tweet
         top_buys = changes.get_top_buys(5)
         if top_buys:
-            buys_tweet = "Biggest Weight Increases:\n\n"
+            buys_tweet = "Biggest Purchases:\n\n"
             for pos in top_buys:
                 if pos.change_type == "new":
-                    buys_tweet += f"+{pos.current_weight:.1f}pp {pos.issuer[:20]} NEW\n"
+                    buys_tweet += f"+{pos.current_weight:.1f}% {pos.issuer[:20]} NEW\n"
                 else:
-                    buys_tweet += f"+{pos.weight_change:.1f}pp {pos.issuer[:20]}\n"
+                    buys_tweet += f"+{pos.weight_change:.1f}% {pos.issuer[:20]}\n"
             tweets.append(buys_tweet.strip())
 
-        # Weight decreases tweet
+        # Sales tweet
         top_sells = changes.get_top_sells(5)
         if top_sells:
-            sells_tweet = "Biggest Weight Decreases:\n\n"
+            sells_tweet = "Biggest Sales:\n\n"
             for pos in top_sells:
                 if pos.change_type == "closed":
-                    sells_tweet += f"-{pos.previous_weight:.1f}pp {pos.issuer[:20]} EXIT\n"
+                    sells_tweet += f"-{pos.previous_weight:.1f}% {pos.issuer[:20]} EXIT\n"
                 else:
-                    sells_tweet += f"{pos.weight_change:.1f}pp {pos.issuer[:20]}\n"
+                    sells_tweet += f"{pos.weight_change:.1f}% {pos.issuer[:20]}\n"
             tweets.append(sells_tweet.strip())
 
         # New positions tweet (if any beyond top buys)
@@ -212,16 +215,16 @@ class TwitterPoster:
         if top_buy:
             pos = top_buy[0]
             if pos.change_type == "new":
-                tweet += f"Top add: {pos.issuer[:15]} +{pos.current_weight:.1f}pp (NEW)\n"
+                tweet += f"Top buy: {pos.issuer[:15]} +{pos.current_weight:.1f}% (NEW)\n"
             else:
-                tweet += f"Top add: {pos.issuer[:15]} +{pos.weight_change:.1f}pp\n"
+                tweet += f"Top buy: {pos.issuer[:15]} +{pos.weight_change:.1f}%\n"
 
         if top_sell:
             pos = top_sell[0]
             if pos.change_type == "closed":
-                tweet += f"Top trim: {pos.issuer[:15]} -{pos.previous_weight:.1f}pp (EXIT)\n"
+                tweet += f"Top sale: {pos.issuer[:15]} -{pos.previous_weight:.1f}% (EXIT)\n"
             else:
-                tweet += f"Top trim: {pos.issuer[:15]} {pos.weight_change:.1f}pp\n"
+                tweet += f"Top sale: {pos.issuer[:15]} {pos.weight_change:.1f}%\n"
 
         tweet += f"\n{changes.num_changes} changes | SEC EDGAR"
 

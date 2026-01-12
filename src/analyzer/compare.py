@@ -282,30 +282,30 @@ class PortfolioAnalyzer:
         # Top positions by current weight
         lines.append("\n📊 TOP HOLDINGS (by portfolio %):")
         for pos in changes.get_top_positions(10):
-            weight_delta = f"+{pos.weight_change:.1f}pp" if pos.weight_change > 0 else f"{pos.weight_change:.1f}pp"
+            weight_delta = f"+{pos.weight_change:.1f}%" if pos.weight_change > 0 else f"{pos.weight_change:.1f}%"
             lines.append(f"  {pos.current_weight:5.1f}% | {pos.issuer[:30]:<30} ({weight_delta})")
 
         # Top buys by weight change
         if changes.new_positions or changes.increased_positions:
-            lines.append("\n📈 BIGGEST WEIGHT INCREASES:")
+            lines.append("\n📈 BIGGEST PURCHASES:")
             for pos in changes.get_top_buys(5):
                 if pos.change_type == "new":
-                    lines.append(f"  +{pos.current_weight:.1f}pp | {pos.issuer} (NEW)")
+                    lines.append(f"  +{pos.current_weight:.1f}% | {pos.issuer} (NEW)")
                 else:
                     lines.append(
-                        f"  +{pos.weight_change:.1f}pp | {pos.issuer} "
+                        f"  +{pos.weight_change:.1f}% | {pos.issuer} "
                         f"({pos.previous_weight:.1f}% → {pos.current_weight:.1f}%)"
                     )
 
         # Top sells by weight change
         if changes.closed_positions or changes.decreased_positions:
-            lines.append("\n📉 BIGGEST WEIGHT DECREASES:")
+            lines.append("\n📉 BIGGEST SALES:")
             for pos in changes.get_top_sells(5):
                 if pos.change_type == "closed":
-                    lines.append(f"  -{pos.previous_weight:.1f}pp | {pos.issuer} (EXITED)")
+                    lines.append(f"  -{pos.previous_weight:.1f}% | {pos.issuer} (EXITED)")
                 else:
                     lines.append(
-                        f"  {pos.weight_change:.1f}pp | {pos.issuer} "
+                        f"  {pos.weight_change:.1f}% | {pos.issuer} "
                         f"({pos.previous_weight:.1f}% → {pos.current_weight:.1f}%)"
                     )
 
